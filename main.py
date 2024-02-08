@@ -3,6 +3,8 @@ import mediapipe as mp
 import imutils
 
 
+DEBUG = True
+
 # Declaring MediaPipe objects
 mpHands = mp.solutions.hands
 hands = mpHands.Hands(min_tracking_confidence = 0.9)
@@ -26,9 +28,12 @@ def draw_hand_connections(img, results):
                     continue
                 h, w, c = img.shape
                 cx, cy = int(lm.x * w), int(lm.y * h)
-                print(id, cx, cy, lm.z)
-                cv2.circle(img, (cx, cy), 8, (0, 255, 0),
-                           cv2.FILLED)
+                if DEBUG:
+                    print(id, cx, cy, round(lm.z, 3))
+                    cv2.circle(img, (cx, cy), 8, (0, 255, 0),
+                            cv2.FILLED)
+                    cv2.putText(img, f"{id}: {cx} {cy} {round(lm.z, 3)}", (30, id * 20), 0 ,0.5, (0, 255, 0), thickness=2)
+                    cv2.putText(img, f"{id}", (cx, cy - 5), 0 ,0.5, (0, 0, 255), thickness=1)
 
             mpDraw.draw_landmarks(img, handLms, mpHands.HAND_CONNECTIONS)
         return img
