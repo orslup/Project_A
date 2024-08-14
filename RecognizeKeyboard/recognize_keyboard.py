@@ -1,6 +1,5 @@
 import cv2
 import numpy as np
-import keyboard
 import mediapipe as mp
 import imutils
 
@@ -8,14 +7,28 @@ from typing import List, Tuple, Any
 
 Point = Tuple[int, int]
 Rect = Tuple[int, int, int, int]
-Image = Any[np.ndarray, None]
+Image = np.ndarray
 
-HOMOGRAPHY_WIDTH = 1600
-HOMOGRAPHY_HEIGHT = 400
 
-mpHands = mp.solutions.hands
-hands = mpHands.Hands()
-mpDraw = mp.solutions.drawing_utils
+class Queue(list):
+
+    def __init__(self, max_size: int) -> None:
+        super()
+        self.max_size = max_size
+    
+    def qpush(self, val) -> None:
+        """
+        inserts item to queue
+        """
+        self.append(val)
+        while len(self) > self.max_size:
+            self.qpop()
+    
+    def qpop(self) -> Any:
+        return self.pop(0)
+    
+    def qpeek(self) -> Any:
+        return self[0]
 
 
 class KeyboardSegmentation:
@@ -33,9 +46,11 @@ class KeyboardSegmentation:
         red_objects = self._detect_red_objects(red_mask)
         if debug:
             for i, (x, y, w, h) in enumerate(red_objects):
-                print(f"{i}: {x, y}")
                 cv2.rectangle(cam_image, (x, y), (x + w, y + h), (0, 0, 255), 2)
-        self._calculate_corners_from_red_objects(red_objects)
+        try:
+            self._calculate_corners_from_red_objects(red_objects)
+        except ValueError:
+            return
         self._compute_homography()
         self._project_keyboard_image(cam_image)
 
@@ -164,27 +179,43 @@ class KeyboardSegmentation:
 class HandSegmentation:
 
     NO_POINT = (-1, -1)
+    HISTORY_SIZE = 10
 
     def __init__(self) -> None:
         self.mpHands = mp.solutions.hands
-        self.hands = mpHands.Hands()
+        self.hands = self.mpHands.Hands()
         self.mpDraw = mp.solutions.drawing_utils
         self.index_finger_tip: Point = self.NO_POINT
         self.thumb_tip: Point = self.NO_POINT
         self.results = None
+        self.landmark_history = Queue(max_size=self.HISTORY_SIZE)
 
     def segment_hands(self, cam_image, debug=True) -> None:
         self._process_image(cam_image)
         if debug:
             self.draw_hand_connections(cam_image)
-        self._update_fingers()
+        try:
+            self._update_fingers()
+        except:
+            return
 
     def _process_image(self, cam_image: Image) -> None:
-        gray_image = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        gray_image = cv2.cvtColor(cam_image, cv2.COLOR_BGR2RGB)
         results = self.hands.process(gray_image)
         if not results.multi_hand_landmarks:
             return
         self.results = results
+
+    def _get_hand_variance(self) -> Point:
+        if not self.results.multi_hand_landmarks:
+            return self.NO_POINT
+        for hand_landmarks in self.results.multi_hand_landmarks:
+            landmarks = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
+        mean_x = sum([lm[0] for lm in landmarks]) / len(landmarks)
+        mean_y = sum([lm[1] for lm in landmarks]) / len(landmarks)
+        variance_x = sum([(lm[0] - mean_x) ** 2 for lm in landmarks]) / len(landmarks)
+        variance_y = sum([(lm[1] - mean_y) ** 2 for lm in landmarks]) / len(landmarks)
+        return (variance_x, variance_y)
 
     def draw_hand_connections(self, cam_image: Image) -> Image:
         if self.results is None:
@@ -193,13 +224,15 @@ class HandSegmentation:
             for handLms in self.results.multi_hand_landmarks:
                 for id, lm in enumerate(handLms.landmark):
                     h, w, c = cam_image.shape
-                    cx, cy = int(lm.x * w), int(lm.y * h)
-                    print(id, cx, cy)
+                    cx, cy, cz = int(lm.x * w), int(lm.y * h), lm.z
+                    if id == 8:
+                        print(cx, cy, cz)
                     cv2.circle(cam_image, (cx, cy), 10, (0, 255, 0), cv2.FILLED)
-                mpDraw.draw_landmarks(cam_image, handLms, mpHands.HAND_CONNECTIONS)
+                self.mpDraw.draw_landmarks(cam_image, handLms, self.mpHands.HAND_CONNECTIONS)
             return cam_image
 
     def _update_fingers(self) -> None:
+        self.landmark_history.qpush(self.results)
         if self.results is None:
             return
         # Get index finger tip and thumb tip positions
@@ -226,10 +259,11 @@ class KeyboardRecognizer:
         success = True
         while success:
             success, image = cap.read()
-            self.segment_image()
+            self.segment_image(image)
             cv2.imshow("Hand tracker", image)
             keyboard_image = self.keyboard_segmentation.keyboard_image
-            cv2.imshow("Keyboard", keyboard_image)
+            if keyboard_image is not None:
+                cv2.imshow("Keyboard", keyboard_image)
 
             if cv2.waitKey(1) == ord("q"):
                 cap.release()
@@ -253,4 +287,5 @@ def main():
     keyboard_recognizer.start()
 
 
-main()
+if __name__ == '__main__':
+    main()
