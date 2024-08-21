@@ -1,3 +1,4 @@
+import sys
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -6,6 +7,11 @@ from pynput.keyboard import Listener, Key
 from pynput.mouse import Button, Controller
 import tkinter
 import time
+from typing import Tuple
+
+# Reuse existing HandSegmentation and Queue classes
+sys.path.append(r"C:\Users\orslu\Project_A\Project_A")
+from RecognizeKeyboard.recognize_keyboard import HandSegmentation  # Update with actual module path
 
 MOUSE_NULL, MOUSE_CLICK, MOUSE_DRAG, MOUSE_DRAGGING, MOUSE_RELEASE, QUIT = range(6)
 
@@ -49,8 +55,8 @@ def keyrelease_listener(key):
     if mouse_state.value == MOUSE_DRAGGING:
         mouse_state.value = MOUSE_RELEASE
 
-def calculate_distance(p1, p2):
-    return np.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2)
+def calculate_distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
+    return np.sqrt((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2)
 
 def main_worker(camera_id):
     global mouse_state
@@ -69,9 +75,7 @@ def main_worker(camera_id):
     webcam.set(3, 640)
     webcam.set(4, 480)
 
-    mpHands = mp.solutions.hands
-    hands = mpHands.Hands(min_tracking_confidence=0.5, min_detection_confidence=0.5)
-    mpDraw = mp.solutions.drawing_utils
+    hand_segmentation = HandSegmentation()
 
     print(u'\x1b[6;30;42m \u2713 TensorMouse with hand tracking started successfully! \033[0m')
     print("Use CTRL to perform clicks, ALT to cursor drag and press CAPS_LOCK to exit")
@@ -82,23 +86,18 @@ def main_worker(camera_id):
         if not success:
             continue
 
-        roi_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = hands.process(roi_rgb)
+        hand_segmentation.segment_hands(image)
 
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                mpDraw.draw_landmarks(image, hand_landmarks, mpHands.HAND_CONNECTIONS)
-                
-                index_finger_tip = hand_landmarks.landmark[8]
-                thumb_tip = hand_landmarks.landmark[4]
-                
-                # Normalize hand position within the full screen
-                handX.value = max(0, min(1, index_finger_tip.x))
-                handY.value = max(0, min(1, index_finger_tip.y))
+        if hand_segmentation.results:
+            index_finger_tip = hand_segmentation.index_finger
+            thumb_tip = hand_segmentation.thumb_finger
 
-                if calculate_distance(thumb_tip, index_finger_tip) < 0.05:
-                    #! is_clicking.value = True 
-                    cv2.putText(image, "Click!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+            handX.value = max(0, min(1, index_finger_tip[0]))
+            handY.value = max(0, min(1, index_finger_tip[1]))
+
+            if calculate_distance(index_finger_tip, thumb_tip) < 0.05:
+                # is_clicking.value = True
+                cv2.putText(image, "Click!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
         cv2.imshow("Hand Tracking", image)
         if cv2.waitKey(5) & 0xFF == 27 or mouse_state.value == QUIT:
