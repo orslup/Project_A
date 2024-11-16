@@ -96,6 +96,9 @@ def main_worker(camera_id):
                 handX.value = max(0, min(1, index_finger_tip.x))
                 handY.value = max(0, min(1, index_finger_tip.y))
 
+                # print(f"mouse x = {handX.value}")
+                # print(f"mouse y = {handY.value}")
+                
                 if calculate_distance(thumb_tip, index_finger_tip) < 0.05:
                     #! is_clicking.value = True 
                     cv2.putText(image, "Click!", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)

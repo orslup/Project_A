@@ -70,7 +70,6 @@ class HandSegmentation:
         return mean_result
 
     def draw_hand_connections(self, cam_image: Image) -> Image:
-        print(self.landmark_history.qrealsize())
         if self.landmark_history.qrealsize() == 0:
             return
         mean_landmarks_result = self._calculate_mean_landmarks(self.MEAN_OVER)
@@ -89,8 +88,33 @@ class HandSegmentation:
         if self.results is None:
             return
         # Get index finger tip and thumb tip positions
-        self.index_finger_tip = self.results.multi_hand_landmarks.landmark[8]
-        self.thumb_tip = self.results.landmark[4]
+        for hand_landmarks in self.results.multi_hand_landmarks:
+            self.index_finger_tip = (hand_landmarks.landmark[8].x, hand_landmarks.landmark[8].y)
+            self.thumb_tip = (hand_landmarks.landmark[4].x, hand_landmarks.landmark[4].y)
+            break
+
+    def identify_click(self) -> bool:
+        """Identify mouse click
+
+        implementation options:
+            - Color change?
+            - index finger rapid location change in one direction (axis)?
+            
+        Returns:
+            bool: Mouse click occured in recent frames
+        """
+        return False # for now
+
+    def identify_mouse_shape(self) -> bool:
+        """Identify if hand is in mouse shape for movement
+
+        implementation options:
+            - check x,y,z var and assert that the values are under threshold 
+            
+        Returns:
+            bool: Hand is in mouse shape
+        """
+        return False # for now
 
     @property
     def index_finger(self) -> Point:
