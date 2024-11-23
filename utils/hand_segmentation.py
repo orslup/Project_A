@@ -32,8 +32,8 @@ class HandSegmentation:
             self.draw_hand_connections(cam_image)
         try:
             self._update_fingers()
-        except:
-            return
+        except Exception as e:
+            pass
 
     def _process_image(self, cam_image: Image) -> None:
         gray_image = cv2.cvtColor(cam_image, cv2.COLOR_BGR2RGB)
@@ -47,12 +47,14 @@ class HandSegmentation:
         if not self.results.multi_hand_landmarks:
             return self.NO_POINT
         for hand_landmarks in self.results.multi_hand_landmarks:
-            landmarks = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
+            landmarks = [(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark]
         mean_x = sum([lm[0] for lm in landmarks]) / len(landmarks)
         mean_y = sum([lm[1] for lm in landmarks]) / len(landmarks)
+        mean_z = sum([lm[2] for lm in landmarks]) / len(landmarks)
         variance_x = sum([(lm[0] - mean_x) ** 2 for lm in landmarks]) / len(landmarks)
         variance_y = sum([(lm[1] - mean_y) ** 2 for lm in landmarks]) / len(landmarks)
-        return (variance_x, variance_y)
+        variance_z = sum([(lm[2] - mean_z) ** 2 for lm in landmarks]) / len(landmarks)
+        return (variance_x, variance_y, variance_z)
 
     def _calculate_mean_landmarks(self, over_last=-1):
         if over_last == -1:
