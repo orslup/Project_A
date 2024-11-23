@@ -1,4 +1,5 @@
 import cv2
+import math
 import numpy as np
 import mediapipe as mp
 from copy import deepcopy
@@ -14,17 +15,17 @@ Image = np.ndarray
 class HandSegmentation:
 
     NO_POINT = (-1, -1)
-    HISTORY_SIZE = 10
     MEAN_OVER = 3
 
-    def __init__(self) -> None:
+    def __init__(self, history_size = 10) -> None:
+        self.history_size = history_size
         self.mpHands = mp.solutions.hands
         self.hands = self.mpHands.Hands()
         self.mpDraw = mp.solutions.drawing_utils
         self.index_finger_tip: Point = self.NO_POINT
         self.thumb_tip: Point = self.NO_POINT
         self.results = None
-        self.landmark_history = Queue(max_size=self.HISTORY_SIZE)
+        self.landmark_history = Queue(max_size = self.history_size)
 
     def segment_hands(self, cam_image, debug=True) -> None:
         self._process_image(cam_image)
@@ -44,7 +45,9 @@ class HandSegmentation:
         self.results = results
 
     def _get_hand_variance(self) -> Point:
-        if not self.results.multi_hand_landmarks:
+        if self.results is None:
+            return
+        elif not self.results.multi_hand_landmarks:
             return self.NO_POINT
         for hand_landmarks in self.results.multi_hand_landmarks:
             landmarks = [(lm.x, lm.y, lm.z) for lm in hand_landmarks.landmark]
@@ -93,6 +96,12 @@ class HandSegmentation:
         for hand_landmarks in self.results.multi_hand_landmarks:
             self.index_finger_tip = (hand_landmarks.landmark[8].x, hand_landmarks.landmark[8].y)
             self.thumb_tip = (hand_landmarks.landmark[4].x, hand_landmarks.landmark[4].y)
+            
+            self.wrist_landmark = hand_landmarks.landmark[0]
+            self.thumb_tip_landmark = hand_landmarks.landmark[4]
+            self.index_knuckle_landmark = hand_landmarks.landmark[5]
+            self.index_finger_tip_landmark = hand_landmarks.landmark[8]
+            self.middle_finger_tip_landmark = hand_landmarks.landmark[12]
             break
 
     def identify_click(self) -> bool:
@@ -106,7 +115,7 @@ class HandSegmentation:
             bool: Mouse click occured in recent frames
         """
         return False # for now
-
+    
     def identify_mouse_shape(self) -> bool:
         """Identify if hand is in mouse shape for movement
 
@@ -116,7 +125,62 @@ class HandSegmentation:
         Returns:
             bool: Hand is in mouse shape
         """
-        return False # for now
+        if self.results is None:
+            return
+        reference_distance = self.calculate_distance(self.wrist_landmark, self.middle_finger_tip_landmark)
+        thumb_index_distance = self.calculate_distance(self.thumb_tip_landmark, self.index_finger_tip_landmark)
+        normalized_thumb_index_distance = self.normalize_distance(thumb_index_distance, reference_distance)
+
+        index_curvature_angle = self.calculate_angle(self.index_finger_tip_landmark,
+                                                     self.index_knuckle_landmark,
+                                                     self.wrist_landmark)
+
+        # Print for debugging
+        # print(f"Normalized Thumb-Index Distance: {normalized_thumb_index_distance:.2f}")
+        # print(f"Index Finger Curvature Angle: {math.degrees(index_curvature_angle):.2f}°")
+
+        # Define gesture conditions
+        if normalized_thumb_index_distance < 0.3 and index_curvature_angle > 1.0:  # Example thresholds
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def calculate_distance(p1, p2) -> float:
+        return ((p1.x - p2.x)**2 + (p1.y - p2.y)**2 + (p1.z - p2.z)**2)**0.5
+    
+    @staticmethod
+    def normalize_distance(distance, reference_distance) -> float:
+        if reference_distance == 0:
+            return 0
+        return distance / reference_distance
+    
+    @staticmethod
+    def calculate_angle(p1, p2, p3) -> float:
+        """
+        Calculates the angle between vectors formed by three points.
+        :param p1: First point.
+        :param p2: Middle point (vertex).
+        :param p3: Third point.
+        :return: Angle in radians.
+        """
+        v1 = [p1.x - p2.x, p1.y - p2.y, p1.z - p2.z]
+        v2 = [p3.x - p2.x, p3.y - p2.y, p3.z - p2.z]
+        
+        # Dot product of v1 and v2
+        dot_product = sum(v1[i] * v2[i] for i in range(3))
+        
+        # Norm (magnitude) of vectors
+        norm_v1 = math.sqrt(sum(v1[i]**2 for i in range(3)))
+        norm_v2 = math.sqrt(sum(v2[i]**2 for i in range(3)))
+        
+        # Avoid division by zero
+        if norm_v1 == 0 or norm_v2 == 0:
+            return 0.0
+        
+        # Angle calculation
+        angle = math.acos(dot_product / (norm_v1 * norm_v2))
+        return angle
 
     @property
     def index_finger(self) -> Point:

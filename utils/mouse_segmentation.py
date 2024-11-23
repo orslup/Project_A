@@ -4,17 +4,19 @@ from pynput.mouse import Button, Controller
 MOUSE_NULL = 0
 MOUSE_CLICK = 1
 
+from Project_A.utils.hand_segmentation import HandSegmentation
+
 class MouseSegmentation(Controller):
     
     def __init__(self):
         super()
         self.mouse_state = MOUSE_NULL
     
-    def segment_mouse(self, handX, handY):
+    def segment_mouse(self, hand_mouse_shape = False):
         """Identify if hand movement is valid for mouse movement 
         (for example hand shape for mouse, if hand is in ROI)
         """
-        pass
+        return
 
     def update_mouse_state(self,is_mouse_click):
         if is_mouse_click:
@@ -22,11 +24,11 @@ class MouseSegmentation(Controller):
         else:
             self.mouse_state = MOUSE_NULL
         
-    def mouse_move(self,handX, handY):
+    def mouse_move(self, mouse_hand_segmentation: HandSegmentation):
         x, y = tkinter.Tk().winfo_screenwidth(), tkinter.Tk().winfo_screenheight()
-
-        handX = max(0, min(1, handX))
-        handY = max(0, min(1, handY))
+        
+        handX = max(0, min(1, mouse_hand_segmentation.index_finger[0]))
+        handY = max(0, min(1, mouse_hand_segmentation.index_finger[1]))
         
         if self.mouse_state == MOUSE_CLICK:
             print("Mouse Click")
@@ -39,3 +41,4 @@ class MouseSegmentation(Controller):
             screen_x = int(handX * x)
             screen_y = int(handY * y)
             self.position = (screen_x, screen_y)
+            print(self.position)

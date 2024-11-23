@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import mediapipe as mp
-from copy import deepcopy
+
 
 from typing import Iterable, List, Tuple, Any
 
@@ -13,11 +13,13 @@ from Project_A.utils.keyboard_segmentation import KeyboardSegmentation
 from Project_A.utils.hand_segmentation import HandSegmentation
 from Project_A.utils.mouse_segmentation import MouseSegmentation
 
+
 class KeyboardRecognizer:
 
     def __init__(self):
         self.keyboard_segmentation = KeyboardSegmentation()
         self.hand_segmentation = HandSegmentation()
+        self.mouse_hand_segmentation = HandSegmentation(history_size = 1)
         self.mouse_segmentation = MouseSegmentation()
 
     def start(self) -> None:
@@ -39,14 +41,14 @@ class KeyboardRecognizer:
 
     def segment_image(self, cam_image: Image) -> None:
         self.keyboard_segmentation.segment_keyboard(cam_image)
-        self.hand_segmentation.segment_hands(cam_image)
-        self.mouse_segmentation.segment_mouse(self.hand_segmentation.index_finger[0],
-                                              self.hand_segmentation.index_finger[1])
+        self.hand_segmentation.segment_hands(cam_image,debug=False)
+        self.mouse_hand_segmentation.segment_hands(cam_image)
+        self.mouse_segmentation.segment_mouse()
 
     def update_mouse_keyboard_state(self) -> None:
-        self.mouse_segmentation.update_mouse_state(self.hand_segmentation.identify_click())
-        self.mouse_segmentation.mouse_move(self.hand_segmentation.index_finger[0],
-                                            self.hand_segmentation.index_finger[1])
+        if self.mouse_hand_segmentation.identify_mouse_shape():
+            self.mouse_segmentation.update_mouse_state(self.mouse_hand_segmentation.identify_click())
+            self.mouse_segmentation.mouse_move(self.mouse_hand_segmentation)
         
     def get_index_finger_on_keyboard(self) -> Point:
         return self.keyboard_segmentation.project_point(
