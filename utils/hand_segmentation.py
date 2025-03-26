@@ -116,6 +116,19 @@ class HandSegmentation:
         """
         return False # for now
     
+    def identify_keyboard_click(self) -> bool:
+        landmarks = [[(lm.x, lm.y, lm.z) for lm in results.multi_hand_landmarks[0].landmark] for results in self.landmark_history.qfiltered()]
+        if len(landmarks) < 2:
+            return False
+        return True
+        i = np.array(landmarks[0])
+        total_movement = 0.0
+        for j in landmarks[1:]:
+            j = np.array(j)
+            total_movement += float(np.sum(np.abs(j - i)))
+        print(total_movement)
+        return total_movement < 8
+
     def identify_mouse_shape(self) -> bool:
         """Identify if hand is in mouse shape for movement
 
