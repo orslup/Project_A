@@ -108,13 +108,40 @@ class HandSegmentation:
         """Identify mouse click
 
         implementation options:
-            - Color change?
-            - index finger rapid location change in one direction (axis)?
+            - index finger rapid location change
             
         Returns:
             bool: Mouse click occured in recent frames
         """
-        return False # for now
+        # Ensure there are enough frames in the history for comparison
+        if self.landmark_history.qrealsize() < 3:
+            return False
+
+        # Get the last three positions of the index finger tip
+        recent_landmarks = self.landmark_history.qfiltered()[-3:]
+        try:
+            p1 = recent_landmarks[0].multi_hand_landmarks[0].landmark[8]  # Earlier frame
+            p2 = recent_landmarks[1].multi_hand_landmarks[0].landmark[8]  # Mid frame
+            p3 = recent_landmarks[2].multi_hand_landmarks[0].landmark[8]  # Latest frame
+        except (AttributeError, IndexError):
+            return False  # No valid landmarks to compare
+
+        # Calculate distances between consecutive points
+        d1 = self.calculate_distance(p1, p2)
+        d2 = self.calculate_distance(p2, p3)
+
+        # Define thresholds for localized rapid movement
+        localized_threshold = 0.05  # Adjust for scale (normalized coordinates)
+        total_distance_threshold = 0.1  # Larger threshold for overall movement
+                
+        # Check if the movement is rapid but localized
+        if d1 < localized_threshold and d2 < localized_threshold and (d1 + d2) > localized_threshold:
+            print("Click detected")
+            return True  # Rapid local movement detected
+        elif (d1 + d2) > total_distance_threshold:
+            return False  # Ignore large movements across the screen
+
+        return False
     
     def identify_keyboard_click(self) -> bool:
         landmarks = [[(lm.x, lm.y, lm.z) for lm in results.multi_hand_landmarks[0].landmark] for results in self.landmark_history.qfiltered()]

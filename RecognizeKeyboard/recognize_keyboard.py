@@ -133,7 +133,7 @@ class KeyboardRecognizer:
 
     def get_pressed_key(self) -> Union[Key, None]:
         # todo change to identify keyboard click
-        if not self.hand_segmentation.identify_keyboard_click():
+        if not self.hand_segmentation.identify_click():
             return None
         key_point = self.get_index_finger_on_keyboard()
         if key_point == self.keyboard_segmentation.NO_POINT:
