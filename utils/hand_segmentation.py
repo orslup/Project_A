@@ -17,7 +17,7 @@ class HandSegmentation:
     NO_POINT = (-1, -1)
     MEAN_OVER = 3
 
-    def __init__(self, history_size = 10) -> None:
+    def __init__(self, history_size = 10, ignore_history = False) -> None:
         self.history_size = history_size
         self.mpHands = mp.solutions.hands
         self.hands = self.mpHands.Hands()
@@ -26,6 +26,7 @@ class HandSegmentation:
         self.thumb_tip: Point = self.NO_POINT
         self.results = None
         self.landmark_history = Queue(max_size = self.history_size)
+        self.ignore_history = ignore_history
 
     def segment_hands(self, cam_image, debug=True) -> None:
         self._process_image(cam_image)
@@ -60,10 +61,14 @@ class HandSegmentation:
         return (variance_x, variance_y, variance_z)
 
     def _calculate_mean_landmarks(self, over_last=-1):
-        if over_last == -1:
+        if self.ignore_history:
+            over_last = 1
+        elif over_last == -1:
             over_last = self.HISTORY_SIZE
+            
         if self.landmark_history.qrealsize() == 0:
             return
+        
         landmarks = [[(lm.x, lm.y, lm.z) for lm in results.multi_hand_landmarks[0].landmark] for results in self.landmark_history.qfiltered()[-over_last:]]
         all_landmarks = np.array(landmarks)
         mean_landmarks = np.mean(all_landmarks, axis=0)
@@ -108,20 +113,45 @@ class HandSegmentation:
         """Identify mouse click
 
         implementation options:
-            - Color change?
-            - index finger rapid location change in one direction (axis)?
+            - index finger rapid location change
             
         Returns:
             bool: Mouse click occured in recent frames
         """
-        return False # for now
+        # Ensure there are enough frames in the history for comparison
+        if self.landmark_history.qrealsize() < 3:
+            return False
+
+        # Get the last three positions of the index finger tip
+        recent_landmarks = self.landmark_history.qfiltered()[-3:]
+        try:
+            p1 = recent_landmarks[0].multi_hand_landmarks[0].landmark[8]  # Earlier frame
+            p2 = recent_landmarks[1].multi_hand_landmarks[0].landmark[8]  # Mid frame
+            p3 = recent_landmarks[2].multi_hand_landmarks[0].landmark[8]  # Latest frame
+        except (AttributeError, IndexError):
+            return False  # No valid landmarks to compare
+
+        # Calculate distances between consecutive points
+        d1 = self.calculate_distance(p1, p2)
+        d2 = self.calculate_distance(p2, p3)
+
+        # Define thresholds for localized rapid movement
+        localized_threshold = 0.05  # Adjust for scale (normalized coordinates)
+        total_distance_threshold = 0.1  # Larger threshold for overall movement
+        
+        print(f"d1 = {d1}, d2 = {d2}")
+        
+        # Check if the movement is rapid but localized
+        if d1 < localized_threshold and d2 < localized_threshold and (d1 + d2) > localized_threshold:
+            print("Click detected")
+            return True  # Rapid local movement detected
+        elif (d1 + d2) > total_distance_threshold:
+            return False  # Ignore large movements across the screen
+
+        return False
     
     def identify_mouse_shape(self) -> bool:
-        """Identify if hand is in mouse shape for movement
-
-        implementation options:
-            - check x,y,z var and assert that the values are under threshold 
-            
+        """Identify if hand is in mouse shape for movement 
         Returns:
             bool: Hand is in mouse shape
         """
@@ -139,8 +169,7 @@ class HandSegmentation:
         # print(f"Normalized Thumb-Index Distance: {normalized_thumb_index_distance:.2f}")
         # print(f"Index Finger Curvature Angle: {math.degrees(index_curvature_angle):.2f}°")
 
-        # Define gesture conditions
-        if normalized_thumb_index_distance < 0.3 and index_curvature_angle > 1.0:  # Example thresholds
+        if normalized_thumb_index_distance < 0.3 and index_curvature_angle > 1.0:
             return True
         else:
             return False

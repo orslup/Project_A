@@ -11,14 +11,8 @@ class MouseSegmentation(Controller):
     def __init__(self):
         super()
         self.mouse_state = MOUSE_NULL
-    
-    def segment_mouse(self, hand_mouse_shape = False):
-        """Identify if hand movement is valid for mouse movement 
-        (for example hand shape for mouse, if hand is in ROI)
-        """
-        return
 
-    def update_mouse_state(self,is_mouse_click):
+    def update_mouse_state(self,is_mouse_click : bool):
         if is_mouse_click:
             self.mouse_state = MOUSE_CLICK
         else:
@@ -41,4 +35,4 @@ class MouseSegmentation(Controller):
             screen_x = int(handX * x)
             screen_y = int(handY * y)
             self.position = (screen_x, screen_y)
-            print(self.position)
+            # print(self.position)

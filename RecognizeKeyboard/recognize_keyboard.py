@@ -42,7 +42,7 @@ class KeyboardRecognizer:
             self.settings: Settings = settings
         self.keyboard_segmentation = KeyboardSegmentation()
         self.hand_segmentation = HandSegmentation()
-        self.mouse_hand_segmentation = HandSegmentation(history_size = 1)
+        self.mouse_hand_segmentation = HandSegmentation(history_size = 5,ignore_history = True)
         self.mouse_segmentation = MouseSegmentation()
 
     def start(self) -> None:
@@ -60,9 +60,13 @@ class KeyboardRecognizer:
             
             if cv2.waitKey(1) == ord("m"):
                 self.settings.toggle_setting('activate_mouse_movement')
+                if self.settings.get_setting("activate_mouse_movement"):
+                    print("Activated mouse movement")
 
             if cv2.waitKey(1) == ord("c"):
                 self.settings.toggle_setting('activate_mouse_click')
+                if self.settings.get_setting("activate_mouse_click"):
+                    print("Activated mouse click")
 
             if cv2.waitKey(1) == ord("k"):
                 self.settings.toggle_setting('activate_keyboard')
@@ -75,12 +79,12 @@ class KeyboardRecognizer:
         self.keyboard_segmentation.segment_keyboard(cam_image)
         self.hand_segmentation.segment_hands(cam_image,debug=False)
         self.mouse_hand_segmentation.segment_hands(cam_image)
-        self.mouse_segmentation.segment_mouse()
 
     def update_mouse_keyboard_state(self) -> None:
-        if self.mouse_hand_segmentation.identify_mouse_shape():
-            if self.settings.get_setting('activate_mouse_click'):
-                self.mouse_segmentation.update_mouse_state(self.mouse_hand_segmentation.identify_click())
+        hand_in_mouse_shape = self.mouse_hand_segmentation.identify_mouse_shape()
+        if self.settings.get_setting('activate_mouse_click'):
+            self.mouse_segmentation.update_mouse_state(self.mouse_hand_segmentation.identify_click())
+        if hand_in_mouse_shape:
             if self.settings.get_setting('activate_mouse_movement'):
                 self.mouse_segmentation.mouse_move(self.mouse_hand_segmentation)
         
