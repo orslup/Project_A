@@ -11,7 +11,7 @@ Image = np.ndarray
 
 
 class KeyboardSegmentation:
-    COOLDOWN_FRAMES = 20 * 1  # approximatly 4 seconds
+    COOLDOWN_FRAMES = 20 * 20  # approximatly 20 seconds
     NO_POINT = (-1, -1)
     def __init__(self, width=1600, height=400) -> None:
         self.homography_width = width
@@ -21,7 +21,7 @@ class KeyboardSegmentation:
         self._keyboard_image_internal: Image = None
         self.keyboard_image: Image = None
         self.homography_matrix: Image = None
-        self.cooldown_frames = self.COOLDOWN_FRAMES
+        self.cooldown_frames = self.COOLDOWN_FRAMES  # timer that runs down and preserves current homography
         self.current_point = self.NO_POINT
         self.current_key = None
         self.cam_image_width = 0
@@ -35,9 +35,9 @@ class KeyboardSegmentation:
         self.cam_image_width = cam_image.shape[1]
         if debug:
             try:
-                src_points_int = src_points.astype(np.uint8).tolist()
-                for point in src_points_int:
-                    x, y = point
+                # src_points_int = src_points.astype(np.uint8).tolist()
+                for point in src_points.tolist():
+                    x, y = list(map(int, point))
                     cv2.circle(cam_image, (x, y), radius=10, color=(0, 0, 255), thickness=2)
             except Exception as e:
                 print(str(e))
@@ -68,7 +68,7 @@ class KeyboardSegmentation:
         position = (10, 60)  # Top-left corner (x, y)
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 3
-        color = (0, 0, 255)  # Red color in BGR
+        color = (0, 255, 0)  # Red color in BGR
         thickness = 3
         # Add text on top-left corner of the image
         return cv2.putText(image, key_name, position, font, font_scale, color, thickness)
@@ -256,8 +256,8 @@ class KeyboardSegmentation:
             homography_matrix,
             (self.homography_width, self.homography_height),
         )
-        homograph_image = cv2.rotate(homograph_image, cv2.ROTATE_180)
-        homograph_image = cv2.flip(homograph_image, 1)
+        # homograph_image = cv2.rotate(homograph_image, cv2.ROTATE_180)
+        # homograph_image = cv2.flip(homograph_image, 1)
         return homograph_image
     
     @staticmethod
@@ -333,7 +333,7 @@ class KeyboardSegmentation:
         dst_point_tuple = tuple(map(round, dst_point[0][0]))
 
         # Fix the y-axis opposite
-        dst_point_tuple = (dst_point_tuple[0], self.homography_height - dst_point_tuple[1])
+        # dst_point_tuple = (dst_point_tuple[0], self.homography_height - dst_point_tuple[1])
 
         # Check if the point is within bounds
         if dst_point_tuple[0] < 0 or dst_point_tuple[0] >= self.homography_width or \
@@ -353,7 +353,7 @@ class KeyboardSegmentation:
     
     def compute_ssim_to_layout(self, cam_keyboard_image: Image):
         layout_keyboard_image_gray = cv2.imread('Project_A/keyboard_map.jpg', cv2.IMREAD_GRAYSCALE)
-        layout_keyboard_image_gray = cv2.rotate(layout_keyboard_image_gray, cv2.ROTATE_180)
+        # layout_keyboard_image_gray = cv2.rotate(layout_keyboard_image_gray, cv2.ROTATE_180)
         cam_keyboard_image_gray = cv2.cvtColor(cam_keyboard_image, cv2.COLOR_BGR2GRAY)
         layout_keyboard_image_gray = cv2.resize(layout_keyboard_image_gray,
                                                 (cam_keyboard_image_gray.shape[1], cam_keyboard_image_gray.shape[0]))

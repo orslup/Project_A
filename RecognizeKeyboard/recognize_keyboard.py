@@ -78,6 +78,8 @@ class KeyboardRecognizer:
         frame_count = 0
         while success:
             success, image = cap.read()
+            # image = cv2.flip(image, 1)
+            # image = cv2.rotate(image, cv2.ROTATE_180)
             frame_count += 1
             if cap is None or not cap.isOpened() or not success:
                 print("Video Capture Ended")
@@ -136,7 +138,6 @@ class KeyboardRecognizer:
         key_point = self.get_index_finger_on_keyboard()
         if key_point == self.keyboard_segmentation.NO_POINT:
             return None
-        print(self.hand_segmentation.index_finger, key_point)
         keyboard_layout_obj = Keyboard_Layout((self.keyboard_segmentation.homography_width,
                                             self.keyboard_segmentation.homography_height))
         key = keyboard_layout_obj.get_key_by_index(*key_point)

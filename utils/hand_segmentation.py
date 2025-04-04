@@ -120,7 +120,7 @@ class HandSegmentation:
         landmarks = [[(lm.x, lm.y, lm.z) for lm in results.multi_hand_landmarks[0].landmark] for results in self.landmark_history.qfiltered()]
         if len(landmarks) < 2:
             return False
-        return True
+        # return True
         i = np.array(landmarks[0])
         total_movement = 0.0
         for j in landmarks[1:]:
