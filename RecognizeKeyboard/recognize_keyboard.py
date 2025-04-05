@@ -138,6 +138,7 @@ class KeyboardRecognizer:
         key_point = self.get_index_finger_on_keyboard()
         if not self.hand_segmentation.identify_click():
             return None
+        self.keyboard_segmentation.draw_click()
         if key_point == self.keyboard_segmentation.NO_POINT:
             return None
         keyboard_layout_obj = Keyboard_Layout((self.keyboard_segmentation.homography_width,

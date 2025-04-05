@@ -16,6 +16,9 @@ class HandSegmentation:
 
     NO_POINT = (-1, -1)
     MEAN_OVER = 3
+    NO_CLICK = 0
+    CLICKING = 1
+    CLICKED = 2
 
     def __init__(self, history_size = 10) -> None:
         self.history_size = history_size
@@ -26,6 +29,7 @@ class HandSegmentation:
         self.thumb_tip: Point = self.NO_POINT
         self.results = None
         self.landmark_history = Queue(max_size = self.history_size)
+        self.keyboard_click_state = self.NO_CLICK
 
     def segment_hands(self, cam_image, debug=True) -> None:
         self._process_image(cam_image)
@@ -127,6 +131,15 @@ class HandSegmentation:
             ]
             for finger_index in (8, 20, 0, 17)
         ]
+        # index_means, pinky_means, wrist_means, pinky_mcp_means = [
+        #     [
+        #         self.mean_point(recent_landmarks[i+1].multi_hand_landmarks[0].landmark[finger_index],
+        #                         recent_landmarks[i+1].multi_hand_landmarks[0].landmark[finger_index])
+        #         for i in range(3)
+        #     ]
+        #     for finger_index in (8, 20, 0, 17)
+        # ]
+
         index_movements, pinky_movements, wrist_movements, pinky_mcp_movements = [
             [
                 self.euclidean_distance(finger_means[i], finger_means[i+1])
@@ -137,16 +150,30 @@ class HandSegmentation:
 
         # Check if there's a "rapid" movement (tune threshold as needed)
         fast_index_motion = any(dist > 0.05 for dist in index_movements)
-        stable_pinky = all(dist < 0.01 for dist in pinky_movements)
-        stable_wrist = all(dist < 0.01 for dist in wrist_movements)
-        stable_pinky_mcp = all(dist < 0.01 for dist in pinky_mcp_movements)
+        stable_pinky = any(dist < 0.06 for dist in pinky_movements)
+        stable_wrist = any(dist < 0.06 for dist in wrist_movements)
+        stable_pinky_mcp = any(dist < 0.06 for dist in pinky_mcp_movements)
 
+        # fast_index_th = max(dist for dist in index_movements)
+        # stable_pinky_th = min(dist for dist in pinky_movements)
+        # stable_wrist_th = min(dist for dist in wrist_movements)
+        # stable_pinky_mcp_th = min(dist for dist in pinky_mcp_movements)
 
         # Click happens if index moved fast, and other fingers stayed still
-        # print(f"{fast_index_motion=} {stable_pinky=} {stable_wrist=} {stable_pinky_mcp=}")
-        if fast_index_motion and (stable_pinky + stable_wrist + stable_pinky_mcp > 2):
-            print("Click detected")
-        return fast_index_motion and (stable_pinky + stable_wrist + stable_pinky_mcp > 2)
+        # print(f"{fast_index_motion=} {stable_pinky_th=:.2} {stable_wrist_th=:.2} {stable_pinky_mcp_th=:.2}")
+        # print(f"{fast_index_th=:.2}")
+
+        # reset state if click was over
+        if self.keyboard_click_state == self.CLICKED:
+            self.keyboard_click_state = self.NO_CLICK
+
+        # update clicking state
+        if self.keyboard_click_state in (self.NO_CLICK, self.CLICKING):
+            if fast_index_motion and (stable_pinky + stable_wrist + stable_pinky_mcp > 2):
+                self.keyboard_click_state = self.CLICKING
+            elif self.keyboard_click_state == self.CLICKING:
+                self.keyboard_click_state = self.CLICKED
+        return self.keyboard_click_state == self.CLICKED
 
     def identify_click_old(self) -> bool:
         """Identify mouse click

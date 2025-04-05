@@ -22,13 +22,14 @@ class KeyboardSegmentation:
         self.keyboard_image: Image = None
         self.homography_matrix: Image = None
         self.cooldown_frames = self.COOLDOWN_FRAMES  # timer that runs down and preserves current homography
+        self.click_write_cooldown = 0
         self.current_point = self.NO_POINT
         self.current_key = None
         self.cam_image_width = 0
         self.cam_image_height = 0
 
     def segment_keyboard(self, cam_image: Image, debug=True):
-        src_points, dst_points = self.get_matching_points(cam_image, how='red')
+        src_points, dst_points = self.get_matching_points(cam_image, how='green')
         if src_points is None or dst_points is None:
             return
         self.cam_image_height = cam_image.shape[0]
@@ -60,6 +61,9 @@ class KeyboardSegmentation:
                                              radius=10, color=(0, 255, 0), thickness=3)
             if self.current_key != None:
                 anotated_keyboard_image = self._put_key_on_image(anotated_keyboard_image, key_name=self.current_key)
+            if self.click_write_cooldown > 0:
+                anotated_keyboard_image = self._draw_click_text(anotated_keyboard_image)
+                self.click_write_cooldown -= 1
             self.keyboard_image = anotated_keyboard_image
 
 
@@ -82,6 +86,18 @@ class KeyboardSegmentation:
         thickness = 3
         # Add text on top-left corner of the image
         return cv2.putText(image, key_name, position, font, font_scale, color, thickness)
+
+    @staticmethod    
+    def _draw_click_text(image: Image):
+        position = (10, 120)  # Top-left corner (x, y)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        color = (0, 0, 255)  # Red color in BGR
+        thickness = 2
+        return cv2.putText(image, 'CLICK!', position, font, font_scale, color, thickness)
+
+    def draw_click(self):
+        self.click_write_cooldown = 5
 
 
     @staticmethod
@@ -265,11 +281,12 @@ class KeyboardSegmentation:
                 ]
     
     def _get_homography_edges(self):
-        return [[self.homography_width / 2, 0],        # Top center
-                [0, self.homography_height / 2],       # Left center
+        return [
+                [self.homography_width / 2, 0],                     # Top center
                 [self.homography_width, self.homography_height / 2],   # Right center
-                [self.homography_width / 2, self.homography_height]    # Bottom center
-                ]
+                [0, self.homography_height / 2],                    # Left center
+                [self.homography_width / 2, self.homography_height], # Bottom center
+            ]
 
     
     def get_matching_points(self, cam_image: Image, how='red') -> Tuple[np.ndarray, np.ndarray]:
@@ -406,7 +423,7 @@ class KeyboardSegmentation:
     def _is_keyboard_image(self, keyboard_image: Image) -> bool:
         white_intensity = self._calc_white_intensity(keyboard_image)
         ssim_similarity = self.compute_ssim_to_layout(keyboard_image)
-        return white_intensity > 0.2 and ssim_similarity > 0.7
+        return white_intensity > 0.2 and ssim_similarity > 0.74
         # check if this is indeed keyboard image
     
     def compute_ssim_to_layout(self, cam_keyboard_image: Image):
