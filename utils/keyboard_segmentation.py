@@ -62,6 +62,16 @@ class KeyboardSegmentation:
                 anotated_keyboard_image = self._put_key_on_image(anotated_keyboard_image, key_name=self.current_key)
             self.keyboard_image = anotated_keyboard_image
 
+
+    def reset_segmantation(self):
+        self.homography_matrix = None
+        self.keyboard_image = None
+        self._keyboard_image_internal = None
+        self.current_key = None
+        self.current_point = self.NO_POINT
+        self.cooldown_frames = 0
+        print("Reset was done!")
+
     @staticmethod
     def _put_key_on_image(image: Image, key_name: str):
         # Assuming self.keyboard_image is your CV2 image
@@ -76,26 +86,42 @@ class KeyboardSegmentation:
 
     @staticmethod
     def _get_mask(image: Image, color='red') -> Image:
+        # Step 1: Increase contrast using CLAHE on the V channel
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        h, s, v = cv2.split(hsv)
+        clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(10, 10))
+        v = clahe.apply(v)
+        hsv = cv2.merge((h, s, v))
+        # hsv = cv2.GaussianBlur(hsv, (5, 5), 0)
 
         # Red color mask with robust thresholds
         if color == 'red':
-            lower_red1 = np.array([0, 50, 50])
-            upper_red1 = np.array([10, 255, 255])
+            lower_red1 = np.array([0, 40, 40])
+            upper_red1 = np.array([12, 255, 255])
             mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
 
-            lower_red2 = np.array([170, 50, 50])
+            lower_red2 = np.array([170, 40, 40])
             upper_red2 = np.array([180, 255, 255])
             mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
 
             mask = mask1 + mask2
         elif color == 'green':
-            lower_green = np.array([45,100,100])
-            upper_green = np.array([75,255,255])
+            lower_green = np.array([35,40,40])
+            upper_green = np.array([85,255,255])
 
             mask = cv2.inRange(hsv, lower_green, upper_green)
         else:
             raise TypeError(f"Color {color} is invalid")
+        
+        kernel = np.ones((3, 3), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_DILATE, kernel, iterations=1)
+        # Step 4: Canny edge detection to find shapes
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+
+        # Combine red mask and edges (bitwise AND)
+        mask = cv2.bitwise_and(mask, edges)
 
         return mask
     
@@ -104,17 +130,49 @@ class KeyboardSegmentation:
         return (rect[0] + rect[2] // 2, rect[1] + rect[3] // 2)
 
     @staticmethod
-    def _detect_objects(mask: Image) -> List[Rect]:
+    def _detect_objects(image: Image, mask: Image) -> List[Rect]:
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         objects = []
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
-            if 10 < w < 30 and 10 < h < 30:  # Filtering based on expected small size
+            if 10 < w < 40 and 10 < h < 40 and KeyboardSegmentation._has_white_border(image, x, y, w, h):  # Filtering based on expected small size
                 objects.append((x, y, w, h))
         objects = sorted(
             objects, key=lambda x: (x[1], x[0])
         )  # Sort by y, then by x
         return objects
+
+    @staticmethod
+    def _is_white(pixel, threshold=80):
+        """returns true if pixel is in white scale"""
+        return pixel[0] > threshold and pixel[1] > threshold and pixel[2] > threshold
+
+    @staticmethod
+    def _has_white_border(image, x, y, w, h, margin=20, white_thresh=0.6):
+        """returns true if rectangle has enough white pixels around it"""
+        h_img, w_img, _ = image.shape
+        # Coordinates with margin (clamped to image bounds)
+        x1 = max(x - margin, 0)
+        y1 = max(y - margin, 0)
+        x2 = min(x + w + margin, w_img)
+        y2 = min(y + h + margin, h_img)
+
+        # Create a mask for just the border area
+        mask = np.zeros((y2 - y1, x2 - x1), dtype=np.uint8)
+        mask[:margin, :] = 1     # top
+        mask[-margin:, :] = 1    # bottom
+        mask[:, :margin] = 1     # left
+        mask[:, -margin:] = 1    # right
+
+        border_region = image[y1:y2, x1:x2]
+        white_pixels = 0
+        total = np.count_nonzero(mask)
+
+        for i in range(mask.shape[0]):
+            for j in range(mask.shape[1]):
+                if mask[i, j] == 1 and KeyboardSegmentation._is_white(border_region[i, j]):
+                    white_pixels += 1
+        return (white_pixels / total) >= white_thresh
 
     def _calculate_edges_from_green_objects(self, green_objects: List[Rect], require_all_points=True):
         if len(green_objects) < 4:
@@ -224,8 +282,8 @@ class KeyboardSegmentation:
         require_all_points = how != 'ransac'  # in native methods need atleast 4
         red_mask = self._get_mask(cam_image, color='red')
         green_mask = self._get_mask(cam_image, color='green')
-        red_objects = self._detect_objects(red_mask)
-        green_objects = self._detect_objects(green_mask)
+        red_objects = self._detect_objects(cam_image, red_mask)
+        green_objects = self._detect_objects(cam_image, green_mask)
         self._calculate_corners_from_red_objects(red_objects, require_all_points=require_all_points)
         self._calculate_edges_from_green_objects(green_objects, require_all_points=require_all_points)
         
@@ -348,7 +406,7 @@ class KeyboardSegmentation:
     def _is_keyboard_image(self, keyboard_image: Image) -> bool:
         white_intensity = self._calc_white_intensity(keyboard_image)
         ssim_similarity = self.compute_ssim_to_layout(keyboard_image)
-        return white_intensity > 0.2 and ssim_similarity > 0.3
+        return white_intensity > 0.2 and ssim_similarity > 0.7
         # check if this is indeed keyboard image
     
     def compute_ssim_to_layout(self, cam_keyboard_image: Image):
@@ -361,6 +419,6 @@ class KeyboardSegmentation:
             print("Images must be the same size for SSIM comparison.")
             return None
 
-        similarity, _ = ssim(layout_keyboard_image_gray, cam_keyboard_image_gray, full=True)
+        similarity, _ = ssim(layout_keyboard_image_gray, cam_keyboard_image_gray, full=True, gaussian_weights=True, sigma=0.3)
         print(f"{similarity=}")
         return similarity

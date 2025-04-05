@@ -87,6 +87,8 @@ class KeyboardRecognizer:
             if save_dir is not None:
                 image_path = os.path.join(save_dir, f"frame_{frame_count:04d}.png")
                 cv2.imwrite(image_path, image)
+            if cv2.waitKey(1) == ord("r"):
+                self.keyboard_segmentation.reset_segmantation()
             self.segment_image(image)
             self.update_mouse_keyboard_state()
             if not self.settings.get_setting('hide_camera_image'):
@@ -104,6 +106,7 @@ class KeyboardRecognizer:
 
             if cv2.waitKey(1) == ord("k"):
                 self.settings.toggle_setting('activate_keyboard')
+            
 
             if cv2.waitKey(1) == ord("q"):
                 cap.release()
