@@ -103,8 +103,52 @@ class HandSegmentation:
             self.index_finger_tip_landmark = hand_landmarks.landmark[8]
             self.middle_finger_tip_landmark = hand_landmarks.landmark[12]
             break
+    
+    @staticmethod
+    def mean_point(p1, p2) -> Tuple[float, float, float]:
+        return (p1.x + p2.x) / 2, (p1.y + p2.y) / 2, (p1.z + p2.z) / 2
 
-    def identify_click(self) -> bool:
+    @staticmethod
+    def euclidean_distance(p1, p2):
+        return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + (p1[2] - p2[2])**2)
+
+    def identify_click(self):
+         # Ensure there are enough frames in the history for comparison
+        if self.landmark_history.qrealsize() < 4:
+            return False
+        # Get the last four positions of the finger landmarks
+        recent_landmarks = self.landmark_history.qfiltered()[-4:]
+        # --- Fingers motion check ---
+        index_means, pinky_means, wrist_means, pinky_mcp_means = [
+            [
+                self.mean_point(recent_landmarks[i].multi_hand_landmarks[0].landmark[finger_index],
+                                recent_landmarks[i+1].multi_hand_landmarks[0].landmark[finger_index])
+                for i in range(3)
+            ]
+            for finger_index in (8, 20, 0, 17)
+        ]
+        index_movements, pinky_movements, wrist_movements, pinky_mcp_movements = [
+            [
+                self.euclidean_distance(finger_means[i], finger_means[i+1])
+                for i in range(2)
+            ]
+            for finger_means in (index_means, pinky_means, wrist_means, pinky_mcp_means)
+        ]
+
+        # Check if there's a "rapid" movement (tune threshold as needed)
+        fast_index_motion = any(dist > 0.05 for dist in index_movements)
+        stable_pinky = all(dist < 0.01 for dist in pinky_movements)
+        stable_wrist = all(dist < 0.01 for dist in wrist_movements)
+        stable_pinky_mcp = all(dist < 0.01 for dist in pinky_mcp_movements)
+
+
+        # Click happens if index moved fast, and other fingers stayed still
+        # print(f"{fast_index_motion=} {stable_pinky=} {stable_wrist=} {stable_pinky_mcp=}")
+        if fast_index_motion and (stable_pinky + stable_wrist + stable_pinky_mcp > 2):
+            print("Click detected")
+        return fast_index_motion and (stable_pinky + stable_wrist + stable_pinky_mcp > 2)
+
+    def identify_click_old(self) -> bool:
         """Identify mouse click
 
         implementation options:
@@ -138,8 +182,8 @@ class HandSegmentation:
         if d1 < localized_threshold and d2 < localized_threshold and (d1 + d2) > localized_threshold:
             print("Click detected")
             return True  # Rapid local movement detected
-        elif (d1 + d2) > total_distance_threshold:
-            return False  # Ignore large movements across the screen
+        # if (d1 + d2) > total_distance_threshold:
+        #     return False  # Ignore large movements across the screen
 
         return False
     

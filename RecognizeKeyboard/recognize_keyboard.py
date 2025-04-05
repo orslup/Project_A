@@ -135,10 +135,9 @@ class KeyboardRecognizer:
             return self.keyboard_segmentation.NO_POINT
 
     def get_pressed_key(self) -> Union[Key, None]:
-        # todo change to identify keyboard click
+        key_point = self.get_index_finger_on_keyboard()
         if not self.hand_segmentation.identify_click():
             return None
-        key_point = self.get_index_finger_on_keyboard()
         if key_point == self.keyboard_segmentation.NO_POINT:
             return None
         keyboard_layout_obj = Keyboard_Layout((self.keyboard_segmentation.homography_width,
