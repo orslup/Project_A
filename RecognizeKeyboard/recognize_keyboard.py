@@ -6,7 +6,9 @@ import mediapipe as mp
 import os
 import glob
 import sys
-
+import threading
+import time
+from collections import deque
 
 Point = Tuple[int, int]
 Rect = Tuple[int, int, int, int]
@@ -54,6 +56,54 @@ class DummyVideoCapture:
         self.index += 1
         return True, frame
 
+
+class CachedVideoCapture:
+    def __init__(self, src=0, cache_size=64):
+        self.cap = cv2.VideoCapture(src)
+        self.cache = deque(maxlen=cache_size)
+        self.lock = threading.Lock()
+        self.stopped = False
+        self.new_frame_event = threading.Event()
+
+        # Start reading frames in background
+        self.thread = threading.Thread(target=self._update, daemon=True)
+        self.thread.start()
+
+    def _update(self):
+        while not self.stopped:
+            if self.cap.isOpened():
+                ret, frame = self.cap.read()
+                if ret:
+                    with self.lock:
+                        self.cache.append(frame)
+                        self.new_frame_event.set()  # Notify that a new frame is available
+                else:
+                    time.sleep(0.01)
+            else:
+                time.sleep(0.1)
+
+    def read(self, timeout=None):
+        # Wait until a frame is available
+        while True:
+            with self.lock:
+                if self.cache:
+                    return True, self.cache[-1].copy()
+                else:
+                    self.new_frame_event.clear()
+            got_frame = self.new_frame_event.wait(timeout=timeout)
+            if not got_frame:
+                # Optional: add a timeout to prevent infinite blocking
+                continue
+
+    def isOpened(self):
+        return self.cap.isOpened()
+
+    def release(self):
+        self.stopped = True
+        self.thread.join()
+        self.cap.release()
+
+
 class KeyboardRecognizer:
 
     def __init__(self, settings: Union[Settings, None] = None, video_src_id: int = 0):
@@ -69,7 +119,7 @@ class KeyboardRecognizer:
 
     def start(self, save_dir=None) -> None:
         if isinstance(self.video_src_id, int) or os.path.isfile(self.video_src_id):
-            cap = cv2.VideoCapture(self.video_src_id)
+            cap = CachedVideoCapture(self.video_src_id)
         else:
             cap = DummyVideoCapture(self.video_src_id)
         if save_dir is not None:

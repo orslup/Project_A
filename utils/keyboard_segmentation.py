@@ -29,7 +29,7 @@ class KeyboardSegmentation:
         self.cam_image_height = 0
 
     def segment_keyboard(self, cam_image: Image, debug=True):
-        src_points, dst_points = self.get_matching_points(cam_image, how='green')
+        src_points, dst_points = self.get_matching_points(cam_image, how='red')
         if src_points is None or dst_points is None:
             return
         self.cam_image_height = cam_image.shape[0]
