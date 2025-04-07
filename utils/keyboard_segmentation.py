@@ -3,6 +3,7 @@ import numpy as np
 from itertools import combinations
 
 from typing import Iterable, List, Tuple, Any
+from skimage.metrics import structural_similarity as ssim
 
 Point = Tuple[int, int]
 Rect = Tuple[int, int, int, int]
@@ -10,62 +11,133 @@ Image = np.ndarray
 
 
 class KeyboardSegmentation:
-    COOLDOWN_FRAMES = 20 * 4  # approximatly 4 seconds
+    COOLDOWN_FRAMES = 20 * 20  # approximatly 20 seconds
+    NO_POINT = (-1, -1)
     def __init__(self, width=1600, height=400) -> None:
         self.homography_width = width
         self.homography_height = height
         self.red_coordinates: List[Point] = []
         self.green_coordinates: List[Point] = []
+        self._keyboard_image_internal: Image = None
         self.keyboard_image: Image = None
         self.homography_matrix: Image = None
-        self.cooldown_frames = self.COOLDOWN_FRAMES
+        self.cooldown_frames = self.COOLDOWN_FRAMES  # timer that runs down and preserves current homography
+        self.click_write_cooldown = 0
+        self.current_point = self.NO_POINT
+        self.current_key = None
+        self.cam_image_width = 0
+        self.cam_image_height = 0
 
     def segment_keyboard(self, cam_image: Image, debug=True):
         src_points, dst_points = self.get_matching_points(cam_image, how='red')
         if src_points is None or dst_points is None:
             return
+        self.cam_image_height = cam_image.shape[0]
+        self.cam_image_width = cam_image.shape[1]
         if debug:
             try:
-                src_points_int = src_points.astype(np.uint8)
-                for point in src_points_int:
-                    x, y = point
-                    cam_image = cv2.circle(cam_image, (y, x), radius=10, color=(0, 0, 255), thickness=2)
+                # src_points_int = src_points.astype(np.uint8).tolist()
+                for point in src_points.tolist():
+                    x, y = list(map(int, point))
+                    cv2.circle(cam_image, (x, y), radius=10, color=(0, 0, 255), thickness=2)
             except Exception as e:
                 print(str(e))
             # for i, (x, y) in enumerate(src_points):
             #     cv2.rectangle(cam_image, (float(x), float(y)), (float(x) + 20, float(y) + 20), (0, 0, 255), 2)
         if self.keyboard_image is not None and self.cooldown_frames > 0:
             self.cooldown_frames -= 1
-            return
-        self.cooldown_frames = self.COOLDOWN_FRAMES
+        else:
+            self.cooldown_frames = self.COOLDOWN_FRAMES
+            self.homography_matrix = self._compute_homography(src_points, dst_points)
+            keyboard_image = self._project_keyboard_image(cam_image, self.homography_matrix)
+            if self._is_keyboard_image(keyboard_image):
+                self._keyboard_image_internal = keyboard_image
+                self.keyboard_image = self._keyboard_image_internal
 
-        self.homography_matrix = self._compute_homography(src_points, dst_points)
-        keyboard_image = self._project_keyboard_image(cam_image, self.homography_matrix)
-        if self._is_keyboard_image(keyboard_image):
-            self.keyboard_image = keyboard_image
+        if self.current_point != self.NO_POINT and self._keyboard_image_internal is not None:
+            anotated_keyboard_image = self._keyboard_image_internal.copy()
+            anotated_keyboard_image = cv2.circle(anotated_keyboard_image, 
+                                             (self.current_point[0], self.current_point[1]),
+                                             radius=10, color=(0, 255, 0), thickness=3)
+            if self.current_key != None:
+                anotated_keyboard_image = self._put_key_on_image(anotated_keyboard_image, key_name=self.current_key)
+            if self.click_write_cooldown > 0:
+                anotated_keyboard_image = self._draw_click_text(anotated_keyboard_image)
+                self.click_write_cooldown -= 1
+            self.keyboard_image = anotated_keyboard_image
+
+
+    def reset_segmantation(self):
+        self.homography_matrix = None
+        self.keyboard_image = None
+        self._keyboard_image_internal = None
+        self.current_key = None
+        self.current_point = self.NO_POINT
+        self.cooldown_frames = 0
+        print("Reset was done!")
+
+    @staticmethod
+    def _put_key_on_image(image: Image, key_name: str):
+        # Assuming self.keyboard_image is your CV2 image
+        position = (10, 60)  # Top-left corner (x, y)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 3
+        color = (0, 255, 0)  # Red color in BGR
+        thickness = 3
+        # Add text on top-left corner of the image
+        return cv2.putText(image, key_name, position, font, font_scale, color, thickness)
+
+    @staticmethod    
+    def _draw_click_text(image: Image):
+        position = (10, 120)  # Top-left corner (x, y)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        color = (0, 0, 255)  # Red color in BGR
+        thickness = 2
+        return cv2.putText(image, 'CLICK!', position, font, font_scale, color, thickness)
+
+    def draw_click(self):
+        self.click_write_cooldown = 5
+
 
     @staticmethod
     def _get_mask(image: Image, color='red') -> Image:
+        # Step 1: Increase contrast using CLAHE on the V channel
         hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        h, s, v = cv2.split(hsv)
+        clahe = cv2.createCLAHE(clipLimit=1.0, tileGridSize=(10, 10))
+        v = clahe.apply(v)
+        hsv = cv2.merge((h, s, v))
+        # hsv = cv2.GaussianBlur(hsv, (5, 5), 0)
 
         # Red color mask with robust thresholds
         if color == 'red':
-            lower_red1 = np.array([0, 50, 50])
-            upper_red1 = np.array([10, 255, 255])
+            lower_red1 = np.array([0, 40, 40])
+            upper_red1 = np.array([12, 255, 255])
             mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
 
-            lower_red2 = np.array([170, 50, 50])
+            lower_red2 = np.array([170, 40, 40])
             upper_red2 = np.array([180, 255, 255])
             mask2 = cv2.inRange(hsv, lower_red2, upper_red2)
 
             mask = mask1 + mask2
         elif color == 'green':
-            lower_green = np.array([45,100,100])
-            upper_green = np.array([75,255,255])
+            lower_green = np.array([35,40,40])
+            upper_green = np.array([85,255,255])
 
             mask = cv2.inRange(hsv, lower_green, upper_green)
         else:
             raise TypeError(f"Color {color} is invalid")
+        
+        kernel = np.ones((3, 3), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_DILATE, kernel, iterations=1)
+        # Step 4: Canny edge detection to find shapes
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+
+        # Combine red mask and edges (bitwise AND)
+        mask = cv2.bitwise_and(mask, edges)
 
         return mask
     
@@ -74,17 +146,49 @@ class KeyboardSegmentation:
         return (rect[0] + rect[2] // 2, rect[1] + rect[3] // 2)
 
     @staticmethod
-    def _detect_objects(mask: Image) -> List[Rect]:
+    def _detect_objects(image: Image, mask: Image) -> List[Rect]:
         contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         objects = []
         for contour in contours:
             x, y, w, h = cv2.boundingRect(contour)
-            if 10 < w < 30 and 10 < h < 30:  # Filtering based on expected small size
+            if 10 < w < 40 and 10 < h < 40 and KeyboardSegmentation._has_white_border(image, x, y, w, h):  # Filtering based on expected small size
                 objects.append((x, y, w, h))
         objects = sorted(
             objects, key=lambda x: (x[1], x[0])
         )  # Sort by y, then by x
         return objects
+
+    @staticmethod
+    def _is_white(pixel, threshold=80):
+        """returns true if pixel is in white scale"""
+        return pixel[0] > threshold and pixel[1] > threshold and pixel[2] > threshold
+
+    @staticmethod
+    def _has_white_border(image, x, y, w, h, margin=20, white_thresh=0.6):
+        """returns true if rectangle has enough white pixels around it"""
+        h_img, w_img, _ = image.shape
+        # Coordinates with margin (clamped to image bounds)
+        x1 = max(x - margin, 0)
+        y1 = max(y - margin, 0)
+        x2 = min(x + w + margin, w_img)
+        y2 = min(y + h + margin, h_img)
+
+        # Create a mask for just the border area
+        mask = np.zeros((y2 - y1, x2 - x1), dtype=np.uint8)
+        mask[:margin, :] = 1     # top
+        mask[-margin:, :] = 1    # bottom
+        mask[:, :margin] = 1     # left
+        mask[:, -margin:] = 1    # right
+
+        border_region = image[y1:y2, x1:x2]
+        white_pixels = 0
+        total = np.count_nonzero(mask)
+
+        for i in range(mask.shape[0]):
+            for j in range(mask.shape[1]):
+                if mask[i, j] == 1 and KeyboardSegmentation._is_white(border_region[i, j]):
+                    white_pixels += 1
+        return (white_pixels / total) >= white_thresh
 
     def _calculate_edges_from_green_objects(self, green_objects: List[Rect], require_all_points=True):
         if len(green_objects) < 4:
@@ -177,11 +281,12 @@ class KeyboardSegmentation:
                 ]
     
     def _get_homography_edges(self):
-        return [[self.homography_width / 2, 0],        # Top center
-                [0, self.homography_height / 2],       # Left center
+        return [
+                [self.homography_width / 2, 0],                     # Top center
                 [self.homography_width, self.homography_height / 2],   # Right center
-                [self.homography_width / 2, self.homography_height]    # Bottom center
-                ]
+                [0, self.homography_height / 2],                    # Left center
+                [self.homography_width / 2, self.homography_height], # Bottom center
+            ]
 
     
     def get_matching_points(self, cam_image: Image, how='red') -> Tuple[np.ndarray, np.ndarray]:
@@ -194,8 +299,8 @@ class KeyboardSegmentation:
         require_all_points = how != 'ransac'  # in native methods need atleast 4
         red_mask = self._get_mask(cam_image, color='red')
         green_mask = self._get_mask(cam_image, color='green')
-        red_objects = self._detect_objects(red_mask)
-        green_objects = self._detect_objects(green_mask)
+        red_objects = self._detect_objects(cam_image, red_mask)
+        green_objects = self._detect_objects(cam_image, green_mask)
         self._calculate_corners_from_red_objects(red_objects, require_all_points=require_all_points)
         self._calculate_edges_from_green_objects(green_objects, require_all_points=require_all_points)
         
@@ -226,8 +331,8 @@ class KeyboardSegmentation:
             homography_matrix,
             (self.homography_width, self.homography_height),
         )
-        homograph_image = cv2.rotate(homograph_image, cv2.ROTATE_180)
-        homograph_image = cv2.flip(homograph_image, 1)
+        # homograph_image = cv2.rotate(homograph_image, cv2.ROTATE_180)
+        # homograph_image = cv2.flip(homograph_image, 1)
         return homograph_image
     
     @staticmethod
@@ -263,15 +368,74 @@ class KeyboardSegmentation:
         print(f"{max_white_intensity=}")
         return best_src, best_dst
 
+
+    # def project_point(self, point, inverse=False) -> Point:
+    #     homography_matrix = (
+    #         np.linalg.inv(self.homography_matrix) if inverse else self.homography_matrix
+    #     )
+    #     src_point = np.array([[point]], dtype=np.float32)
+    #     dst_point = cv2.perspectiveTransform(src_point, homography_matrix)
+    #     dst_point_tuple = tuple(map(int, dst_point[0][0]))
+    #     print(dst_point_tuple)
+    #     if dst_point_tuple[0] < 0 or dst_point_tuple[0] >= self.homography_width or \
+    #         dst_point_tuple[1] < 0 or dst_point_tuple[1] >= self.homography_height:
+    #         return self.NO_POINT
+    #     self.current_point = dst_point_tuple
+    #     return dst_point_tuple
     def project_point(self, point, inverse=False) -> Point:
-        homography_matrix = (
-            np.linalg.inv(self.homography_matrix) if inverse else self.homography_matrix
-        )
-        src_point = np.array([[point]], dtype=np.float32)
+        # Ensure the homography matrix is 3x3
+        if self.homography_matrix is None:
+            return self.NO_POINT
+        if self.homography_matrix.shape != (3, 3):
+            raise ValueError("Homography matrix must be 3x3")
+
+        # Invert the homography matrix if needed
+        if inverse:
+            if np.linalg.det(self.homography_matrix) == 0:
+                raise ValueError("Homography matrix is singular and cannot be inverted")
+            homography_matrix = np.linalg.inv(self.homography_matrix)
+        else:
+            homography_matrix = self.homography_matrix
+
+        # Ensure the input point is in the correct format (1,1,2)
+        pixel_point = (point[0] * self.cam_image_width, point[1] * self.cam_image_height)
+        src_point = np.array([[pixel_point]], dtype=np.float32).reshape(1, 1, 2)
+
+        # Perform perspective transformation
         dst_point = cv2.perspectiveTransform(src_point, homography_matrix)
-        return tuple(dst_point[0][0])
+
+        # Convert to integer tuple (use round instead of int for accuracy)
+        dst_point_tuple = tuple(map(round, dst_point[0][0]))
+
+        # Fix the y-axis opposite
+        # dst_point_tuple = (dst_point_tuple[0], self.homography_height - dst_point_tuple[1])
+
+        # Check if the point is within bounds
+        if dst_point_tuple[0] < 0 or dst_point_tuple[0] >= self.homography_width or \
+        dst_point_tuple[1] < 0 or dst_point_tuple[1] >= self.homography_height:
+            return self.NO_POINT
+
+        # Store the projected point
+        self.current_point = dst_point_tuple
+
+        return dst_point_tuple
 
     def _is_keyboard_image(self, keyboard_image: Image) -> bool:
         white_intensity = self._calc_white_intensity(keyboard_image)
-        return white_intensity > 0.6
+        ssim_similarity = self.compute_ssim_to_layout(keyboard_image)
+        return white_intensity > 0.2 and ssim_similarity > 0.74
         # check if this is indeed keyboard image
+    
+    def compute_ssim_to_layout(self, cam_keyboard_image: Image):
+        layout_keyboard_image_gray = cv2.imread('Project_A/keyboard_map.jpg', cv2.IMREAD_GRAYSCALE)
+        # layout_keyboard_image_gray = cv2.rotate(layout_keyboard_image_gray, cv2.ROTATE_180)
+        cam_keyboard_image_gray = cv2.cvtColor(cam_keyboard_image, cv2.COLOR_BGR2GRAY)
+        layout_keyboard_image_gray = cv2.resize(layout_keyboard_image_gray,
+                                                (cam_keyboard_image_gray.shape[1], cam_keyboard_image_gray.shape[0]))
+        if cam_keyboard_image_gray.shape != cam_keyboard_image_gray.shape:
+            print("Images must be the same size for SSIM comparison.")
+            return None
+
+        similarity, _ = ssim(layout_keyboard_image_gray, cam_keyboard_image_gray, full=True, gaussian_weights=True, sigma=0.3)
+        print(f"{similarity=}")
+        return similarity

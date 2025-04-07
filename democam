@@ -1,0 +1,2 @@
+cd ..
+python -m Project_A -k --id 1 
