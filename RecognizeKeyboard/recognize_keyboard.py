@@ -167,16 +167,17 @@ class KeyboardRecognizer:
                 cv2.destroyAllWindows()
 
     def segment_image(self, cam_image: Image) -> None:
-        self.keyboard_segmentation.segment_keyboard(cam_image)
+        if self.settings.get_setting('activate_keyboard'):
+            self.keyboard_segmentation.segment_keyboard(cam_image)
         self.hand_segmentation.segment_hands(cam_image,debug=False)
-        self.mouse_hand_segmentation.segment_hands(cam_image)
+        if self.settings.get_setting('activate_mouse_movement') or self.settings.get_setting('activate_mouse_click') :
+            self.mouse_hand_segmentation.segment_hands(cam_image)
 
     def update_mouse_keyboard_state(self) -> None:
         hand_in_mouse_shape = self.mouse_hand_segmentation.identify_mouse_shape()
         if self.settings.get_setting('activate_mouse_click'):
-            self.mouse_segmentation.update_mouse_state(self.mouse_hand_segmentation.identify_click())
+            self.mouse_segmentation.update_mouse_state(self.mouse_hand_segmentation.identify_click_robust())
         if hand_in_mouse_shape:
-            if self.settings.get_setting('activate_mouse_movement'):
                 self.mouse_segmentation.mouse_move(self.mouse_hand_segmentation)
         
     def get_index_finger_on_keyboard(self) -> Point:
@@ -190,7 +191,7 @@ class KeyboardRecognizer:
 
     def get_pressed_key(self) -> Union[Key, None]:
         key_point = self.get_index_finger_on_keyboard()
-        if not self.hand_segmentation.identify_click():
+        if not self.hand_segmentation.identify_click_robust():
             return None
         self.keyboard_segmentation.draw_click()
         if key_point == self.keyboard_segmentation.NO_POINT:

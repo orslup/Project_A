@@ -1,6 +1,3 @@
-import sys
-sys.path.append(r"C:\Users\orslu\Project_A")
-
 import argparse
 from typing import List, Dict, Tuple, Any
 from Project_A.RecognizeKeyboard.recognize_keyboard import KeyboardRecognizer, Settings

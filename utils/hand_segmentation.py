@@ -64,6 +64,20 @@ class HandSegmentation:
         variance_z = sum([(lm[2] - mean_z) ** 2 for lm in landmarks]) / len(landmarks)
         return (variance_x, variance_y, variance_z)
 
+    def get_center_of_mass(self, over_last=3) -> Point:
+        if self.landmark_history.qrealsize() < over_last:
+            return self.NO_POINT
+        landmarks = [[(lm.x, lm.y) for lm in results.multi_hand_landmarks[0].landmark] for results in self.landmark_history.qfiltered()[-over_last:]]
+        all_landmarks = np.array(landmarks)
+        # Average across frames to reduce noise: shape = (num_landmarks, 2)
+        mean_landmarks = np.mean(all_landmarks, axis=0)
+
+        # Compute center of mass: mean of all (x, y) pairs
+        center_of_mass = np.mean(mean_landmarks, axis=0)
+
+        # Return as tuple (x, y)
+        return tuple(center_of_mass)
+
     def _calculate_mean_landmarks(self, over_last=-1):
         if self.ignore_history:
             over_last = 1
@@ -121,7 +135,7 @@ class HandSegmentation:
     def euclidean_distance(p1, p2):
         return np.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2 + (p1[2] - p2[2])**2)
 
-    def identify_click(self):
+    def identify_click_robust(self):
          # Ensure there are enough frames in the history for comparison
         if self.landmark_history.qrealsize() < 4:
             return False
@@ -180,7 +194,7 @@ class HandSegmentation:
                 self.keyboard_click_state = self.CLICKED
         return self.keyboard_click_state == self.CLICKED
 
-    def identify_click_old(self) -> bool:
+    def identify_mouse_click(self) -> bool:
         """Identify mouse click
 
         implementation options:
@@ -218,19 +232,6 @@ class HandSegmentation:
             return False  # Ignore large movements across the screen
         return False
     
-    def identify_keyboard_click(self) -> bool:
-        landmarks = [[(lm.x, lm.y, lm.z) for lm in results.multi_hand_landmarks[0].landmark] for results in self.landmark_history.qfiltered()]
-        if len(landmarks) < 2:
-            return False
-        # return True
-        i = np.array(landmarks[0])
-        total_movement = 0.0
-        for j in landmarks[1:]:
-            j = np.array(j)
-            total_movement += float(np.sum(np.abs(j - i)))
-        print(total_movement)
-        return total_movement < 8
-
     def identify_mouse_shape(self) -> bool:
         """Identify if hand is in mouse shape for movement 
         Returns:

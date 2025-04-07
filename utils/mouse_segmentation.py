@@ -25,8 +25,11 @@ class MouseSegmentation(Controller):
         margin = 0.1
         
         # Clamp the coordinates to the inner region (0.1 to 0.9)
-        raw_x = mouse_hand_segmentation.index_finger[0]
-        raw_y = mouse_hand_segmentation.index_finger[1]
+        raw_x, raw_y = mouse_hand_segmentation.get_center_of_mass()
+        if raw_x == -1 or raw_y == -1:
+            return
+        # raw_x = mouse_hand_segmentation.index_finger[0]
+        # raw_y = mouse_hand_segmentation.index_finger[1]
 
         handX = max(margin, min(1 - margin, raw_x))
         handY = max(margin, min(1 - margin, raw_y))  

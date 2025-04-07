@@ -1,0 +1,2 @@
+cd ..
+python -m Project_A --activate_mouse_movement --activate_mouse_click --id 1 
