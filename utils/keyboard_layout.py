@@ -135,7 +135,7 @@ class Keyboard_Layout:
             return None
         
         if len(matches) > 1:
-            raise RuntimeError("Multiple keys match for point. Redefine your keys configuration")
+            print("Multiple keys match for point. Redefine your keys configuration")
         
         match = matches[0]
         key_name = self.KEYS_LOCATION_DICT[match]

@@ -169,7 +169,7 @@ class KeyboardRecognizer:
     def segment_image(self, cam_image: Image) -> None:
         if self.settings.get_setting('activate_keyboard'):
             self.keyboard_segmentation.segment_keyboard(cam_image)
-        self.hand_segmentation.segment_hands(cam_image,debug=False)
+            self.hand_segmentation.segment_hands(cam_image,debug=True)
         if self.settings.get_setting('activate_mouse_movement') or self.settings.get_setting('activate_mouse_click') :
             self.mouse_hand_segmentation.segment_hands(cam_image)
 
