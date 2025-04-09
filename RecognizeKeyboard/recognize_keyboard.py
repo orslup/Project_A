@@ -198,7 +198,7 @@ class KeyboardRecognizer:
             if is_mouse_click:
                 self.draw_click()
             self.mouse_segmentation.update_mouse_state(is_mouse_click)
-        if hand_in_mouse_shape:
+        if hand_in_mouse_shape and self.settings.get_setting('activate_mouse_movement'):
                 self.mouse_segmentation.mouse_move(self.mouse_hand_segmentation)
         
     def get_index_finger_on_keyboard(self) -> Point:
