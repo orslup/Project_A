@@ -116,6 +116,7 @@ class KeyboardRecognizer:
         self.hand_segmentation = HandSegmentation()
         self.mouse_hand_segmentation = HandSegmentation(history_size = 5,ignore_history = True)
         self.mouse_segmentation = MouseSegmentation()
+        self.click_write_cooldown = 0
 
     def start(self, save_dir=None) -> None:
         if isinstance(self.video_src_id, int) or os.path.isfile(self.video_src_id):
@@ -142,7 +143,12 @@ class KeyboardRecognizer:
             self.segment_image(image)
             self.update_mouse_keyboard_state()
             if not self.settings.get_setting('hide_camera_image'):
-                cv2.imshow("Hand tracker", image)
+                if self.click_write_cooldown > 0:
+                    anotated_camera_image = self._draw_click_text(image)
+                    self.click_write_cooldown -= 1
+                else:
+                    anotated_camera_image = image
+                cv2.imshow("Hand tracker", anotated_camera_image)
             keyboard_image = self.keyboard_segmentation.keyboard_image
             if not self.settings.get_setting('hide_keyboard_image') and keyboard_image is not None:
                 cv2.imshow("Keyboard", keyboard_image)
@@ -173,10 +179,25 @@ class KeyboardRecognizer:
         if self.settings.get_setting('activate_mouse_movement') or self.settings.get_setting('activate_mouse_click') :
             self.mouse_hand_segmentation.segment_hands(cam_image)
 
+    @staticmethod    
+    def _draw_click_text(image: Image):
+        position = (10, 120)  # Top-left corner (x, y)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1
+        color = (0, 0, 255)  # Red color in BGR
+        thickness = 2
+        return cv2.putText(image, 'CLICK!', position, font, font_scale, color, thickness)
+
+    def draw_click(self):
+        self.click_write_cooldown = 3
+
     def update_mouse_keyboard_state(self) -> None:
         hand_in_mouse_shape = self.mouse_hand_segmentation.identify_mouse_shape()
         if self.settings.get_setting('activate_mouse_click'):
-            self.mouse_segmentation.update_mouse_state(self.mouse_hand_segmentation.identify_click_robust())
+            is_mouse_click = self.mouse_hand_segmentation.identify_click_robust()
+            if is_mouse_click:
+                self.draw_click()
+            self.mouse_segmentation.update_mouse_state(is_mouse_click)
         if hand_in_mouse_shape:
                 self.mouse_segmentation.mouse_move(self.mouse_hand_segmentation)
         
